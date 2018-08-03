@@ -29,6 +29,7 @@ GYRO = 2
 ACCEL_LIMIT = 0.08 # g's
 
 PID_XYZ_G = [[0.50,0,0.05],[0.50,0,0.05],[0,0,0]]
+PID_XYZ_A = [[5.0,0,0.5],[5.0,0,0.5],[0,0,0]]
 
 class Thrust:
     def __init__(self, thrust_limit):
@@ -78,6 +79,7 @@ class IMU_FXOS8700:
         self._z_accel = None
         self.last_a = None
         self.last_g = None
+        self.last_ahrs = None
         
     def get(self):
         a, m, g = self.imu.get()
@@ -104,6 +106,19 @@ class IMU_FXOS8700:
             self.last_g = t
         return self.get()[GYRO], dt
         
+    def get_attitude(self):
+        if self.last_ahrs == None:
+            dt = 0.0
+            self.last_ahrs = time.time()
+        else:
+            t = time.time()
+            dt = t - self.last_ahrs
+            self.last_ahrs = t
+        a, m, g = self.imu.get()
+        pitch = (np.arctan2(a[X], np.sqrt(a[Y]**2 + a[Z]**2))*180.0)/np.pi;
+        roll = (np.arctan2(-a[Y], a[Z])*180.0)/np.pi;
+        return [pitch, roll, 0.0], dt  # heading is unknown
+    
     def calibrate(self):
         print('Calibrating gyro...')
         i = 0
@@ -131,7 +146,8 @@ class IMU_FXOS8700:
             
     def level(self):
         a, m, g = self.get()
-        return abs(a[X]) < ACCEL_LIMIT and abs(a[Y]) < ACCEL_LIMIT and abs(a[Z] - 1.0) < ACCEL_LIMIT
+        lim = ACCEL_LIMIT * 3.0
+        return abs(a[X]) < lim and abs(a[Y]) < lim and abs(a[Z] - 1.0) < lim
         
     def __str__(self):
         return str(self.get())
@@ -209,21 +225,24 @@ class QuadQav250:
         self.imu = IMU_FXOS8700()
         self.thrust.set_throttle([0,0,0,0])
         self.imu.calibrate()
-        self.angular_pid = PidController(PID_XYZ_G,self.imu.get_g)
+        self.angular_pid_g = PidController(PID_XYZ_G,self.imu.get_g)
+        self.angular_pid_a = PidController(PID_XYZ_A,self.imu.get_attitude)
         
     def fly(self):
         print('============================')
         print('STARTING TEST FLIGHT')
         t0 = time.time()
-        base_throttle = [35,35,35,35]
+        base_throttle = [40,40,40,40]
         self.thrust.set_throttle(base_throttle)
         t1 = time.time()
         dt_max = 0.0
         dt_min = 999.9
         dt_sum = 0.0
         i = 0
-        while time.time() < t0 + 10.0:
-            self.thrust.set_throttle(np.add(base_throttle, self.angular_pid.update()))
+        while time.time() < t0 + 3.0:
+            self.thrust.set_throttle(np.add(base_throttle, self.angular_pid_a.update()))
+            print(self.thrust)
+            #print(self.imu.get_attitude())
             t2 = time.time()
             dt = t2 - t1
             t1 = t2
@@ -231,11 +250,13 @@ class QuadQav250:
             dt_max = max(dt_max, dt)
             dt_min = min(dt_min, dt)
             dt_sum += dt
+            time.sleep(0.25)
         print(i, dt_max, dt_min, dt_sum / i)
             
         self.thrust.disarm()
         
-q = QuadQav250(thrust_limit=80)
+q = QuadQav250(thrust_limit=100)
 q.fly()
+
 
 
