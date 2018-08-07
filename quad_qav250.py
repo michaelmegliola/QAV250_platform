@@ -1,7 +1,10 @@
 import numpy as np
 import time
 import Adafruit_PCA9685
+from Adafruit_BNO055 import BNO055
 from nxp_imu import IMU
+import VL53L1X
+import threading
 
 FRONT_RIGHT = 0
 REAR_RIGHT = 1
@@ -18,6 +21,10 @@ ESC_PWM_MIN = 150
 
 PWM_FREQ_HZ = 60
 
+VL53L1X_RANGE_SHORT = 1
+VL53L1X_RANGE_MEDIUM = 2
+VL53L1X_RANGE_LONG = 3
+
 X = 0
 Y = 1
 Z = 2
@@ -28,8 +35,7 @@ GYRO = 2
 
 ACCEL_LIMIT = 0.08 # g's
 
-PID_XYZ_G = [[0.50,0,0.05],[0.50,0,0.05],[0,0,0]]
-PID_XYZ_A = [[5.0,0,0.5],[5.0,0,0.5],[0,0,0]]
+PID_XYZ_EULER = [[10.00,0,0.10],[10.00,0,0.10],[0,0,0]]
 
 class Thrust:
     def __init__(self, thrust_limit):
@@ -70,6 +76,61 @@ class Thrust:
     def __str__(self):
         return str(self.throttle) + str(self.v_pwm) + ', armed = ' + str(self.armed)
 
+class TOF_VL53L1X:  # see https://github.com/pimoroni/vl53l1x-python
+    
+    def __init__(self):
+        self.tof = VL53L1X.VL53L1X(i2c_bus=1, i2c_address=0x29)
+        self.tof.open()
+        self.tof.start_ranging(VL53L1X_RANGE_SHORT)
+        self.distance = None
+        self.dt = None
+        self.velocity = None
+        self.i = 0
+        self.stopping = False
+        
+    def calibrate(self):
+        print('Calibrating TOF sensor (altimeter)')
+        i = 0
+        while i < 100:
+            d = self.tof.get_distance()
+            i += 1
+            if d > 50.0:
+                print('Cannot calibrate TOF sensor (altimeter); distance = ', d)
+                i = 0
+            # need visual feedback here
+     
+    def start(self):
+        threading.Thread(target=self.run).start()
+        
+    def stop(self):
+        self.stopping = True
+            
+    def run(self):
+        d0 = self.tof.get_distance()
+        t0 = time.time()
+        while not self.stopping:
+            d1 = self.tof.get_distance()
+            t1 = time.time()
+            self.distance = d1
+            self.dt = t1 - t0
+            self.velocity = (d1-d0)/(t1-t0)
+            self.i += 1
+            d0 = d1
+            t0 = t1
+  
+class AHRS_BNO055:
+    def __init__(self):
+        self.imu = BNO055.BNO055(serial_port='/dev/serial0', rst=18) # connected to UART, not I2C bus
+        self.time = None
+
+    # returns roll, pitch, yaw
+    def get_orientation(self):
+        y,r,p = self.imu.read_euler()
+        t1 = time.time()
+        dt = 0 if self.time == None else t1 - self.time
+        self.time = t1
+        return (r,p,y),dt
+    
 class IMU_FXOS8700:
     
     def __init__(self):
@@ -222,38 +283,31 @@ class BoundedPid(PidController):
 class QuadQav250:
     def __init__(self, thrust_limit = 40.0):
         self.thrust = Thrust(thrust_limit)
-        self.imu = IMU_FXOS8700()
         self.thrust.set_throttle([0,0,0,0])
-        self.imu.calibrate()
-        self.angular_pid_g = PidController(PID_XYZ_G,self.imu.get_g)
-        self.angular_pid_a = PidController(PID_XYZ_A,self.imu.get_attitude)
-        
+        self.altimeter = TOF_VL53L1X()
+        self.altimeter.calibrate()
+        self.altimeter.start()
+        self.imu = AHRS_BNO055()
+        self.angular_pid_ahrs = PidController(PID_XYZ_EULER,self.imu.get_orientation)
+        #self.linear_pid_xyz = PidController(PID_XYZ_L,f(x),[0,0,0],t_linear)
+    
+    def shutdown(self):
+        self.thrust.disarm()
+        self.altimeter.stop()
+    
     def fly(self):
+        
         print('============================')
         print('STARTING TEST FLIGHT')
-        t0 = time.time()
         base_throttle = [40,40,40,40]
         self.thrust.set_throttle(base_throttle)
-        t1 = time.time()
-        dt_max = 0.0
-        dt_min = 999.9
-        dt_sum = 0.0
+        t0 = time.time()
         i = 0
-        while time.time() < t0 + 3.0:
-            self.thrust.set_throttle(np.add(base_throttle, self.angular_pid_a.update()))
-            print(self.thrust)
-            #print(self.imu.get_attitude())
-            t2 = time.time()
-            dt = t2 - t1
-            t1 = t2
-            i += 1
-            dt_max = max(dt_max, dt)
-            dt_min = min(dt_min, dt)
-            dt_sum += dt
-            time.sleep(0.25)
-        print(i, dt_max, dt_min, dt_sum / i)
+        while time.time() < t0 + 9.0:
+            self.thrust.set_throttle(np.add(base_throttle, self.angular_pid_ahrs.update()))
+            #print(self.thrust)
             
-        self.thrust.disarm()
+        self.shutdown()
         
 q = QuadQav250(thrust_limit=100)
 q.fly()
