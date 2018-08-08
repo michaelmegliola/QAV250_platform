@@ -35,7 +35,8 @@ GYRO = 2
 
 ACCEL_LIMIT = 0.08 # g's
 
-PID_XYZ_EULER = [[10.00,0,0.10],[10.00,0,0.10],[0,0,0]]
+PID_XYZ_EULER = [[1.00,0,0.50],[1.00,0,0.50],[0,0,0]]
+PID_XYZ_OFF = [[0,0,0],[0,0,0],[0,0,0]]
 
 class Thrust:
     def __init__(self, thrust_limit):
@@ -49,7 +50,6 @@ class Thrust:
         
     # setting must be [FORE,STARBOARD,AFT,PORT], each value 0.0 to 100.0
     def set_throttle(self, setting):
-        # the planar geometric mapping goes here?
         setting = setting if self.armed else [0,0,0,0]
         self.throttle = np.maximum(setting, 0.0)
         self.throttle = np.minimum(self.throttle, self.thrust_limit)
@@ -223,7 +223,7 @@ class IMU_FXOS8700:
 
 class PidController:
     
-    t_angular = [[-1,0,1,0],[0,-1,0,1],[-1,1,-1,1]]    # translation matrix to apply angular values to motors
+    t_angular = [[0,-1,0,1],[-1,0,1,0],[-1,1,-1,1]]    # translation matrix to apply angular values to motors
     t_linear =  [[1,0,-1,0],[0,1,0,-1],[-1,-1,-1,-1]]  # translation matrix to apply linear values to motors
     
     def __init__(self, k_3_3, f_state, target=[0.0,0.0,0.0], t=t_angular):
@@ -236,7 +236,8 @@ class PidController:
         self.pid = [0.0,0.0,0.0]    # resulting pid values for 3 axes (x,y,z)
         self.t = t                  # translation matrix to apply pid to motor speeds
         self.count = 0
-    
+        self.throttle_adj = [None,None,None,None]
+        
     def update(self):
         self.count += 1
         vals, dt = self.f_state()
@@ -285,32 +286,42 @@ class QuadQav250:
         self.thrust = Thrust(thrust_limit)
         self.thrust.set_throttle([0,0,0,0])
         self.altimeter = TOF_VL53L1X()
-        self.altimeter.calibrate()
-        self.altimeter.start()
+        #self.altimeter.calibrate()
+        #self.altimeter.start()
         self.imu = AHRS_BNO055()
+        #self.angular_pid_ahrs = PidController(PID_XYZ_EULER,self.imu.get_orientation)
         self.angular_pid_ahrs = PidController(PID_XYZ_EULER,self.imu.get_orientation)
-        #self.linear_pid_xyz = PidController(PID_XYZ_L,f(x),[0,0,0],t_linear)
-    
+        
     def shutdown(self):
         self.thrust.disarm()
         self.altimeter.stop()
+        print('===SHUTDOWN COMPLETE===')
+    
+    def test(self):
+        for n in range(10):
+            self.angular_pid_ahrs.update()
+            print(self.angular_pid_ahrs)
+    
+    def kill(self):
+        self.shutdown()
     
     def fly(self):
+        try:
+            print('============================')
+            print('STARTING TEST FLIGHT')
+            base_throttle = [0,0,0,0]
+            self.thrust.set_throttle(base_throttle)
+            t0 = time.time()
+            i = 0
+            while time.time() < t0 + 4.0:
+                self.thrust.set_throttle(np.add(base_throttle, self.angular_pid_ahrs.update()))
+                
+        finally:
+            self.shutdown()
         
-        print('============================')
-        print('STARTING TEST FLIGHT')
-        base_throttle = [40,40,40,40]
-        self.thrust.set_throttle(base_throttle)
-        t0 = time.time()
-        i = 0
-        while time.time() < t0 + 9.0:
-            self.thrust.set_throttle(np.add(base_throttle, self.angular_pid_ahrs.update()))
-            #print(self.thrust)
-            
-        self.shutdown()
-        
-q = QuadQav250(thrust_limit=100)
+q = QuadQav250(thrust_limit=50)
 q.fly()
+q.kill()
 
 
 
