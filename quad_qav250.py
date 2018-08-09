@@ -35,7 +35,7 @@ GYRO = 2
 
 ACCEL_LIMIT = 0.08 # g's
 
-PID_XYZ_EULER = [[1.00,0,0.50],[1.00,0,0.50],[0,0,0]]
+PID_XYZ_EULER = [[0.3,0,0.1],[0.3,0,0.1],[0,0,0]]
 PID_XYZ_OFF = [[0,0,0],[0,0,0],[0,0,0]]
 
 class Thrust:
@@ -67,7 +67,6 @@ class Thrust:
         self.pwm.set_pwm(REAR_RIGHT,  0, int(self.v_pwm[REAR_RIGHT]))
         self.pwm.set_pwm(REAR_LEFT,   0, int(self.v_pwm[REAR_LEFT]))
         self.pwm.set_pwm(FRONT_LEFT,  0, int(self.v_pwm[FRONT_LEFT]))
-        
         
     def disarm(self):
         self.set_throttle([0,0,0,0])
@@ -298,7 +297,7 @@ class QuadQav250:
         print('===SHUTDOWN COMPLETE===')
     
     def test(self):
-        for n in range(10):
+        for n in range(100):
             self.angular_pid_ahrs.update()
             print(self.angular_pid_ahrs)
     
@@ -309,19 +308,21 @@ class QuadQav250:
         try:
             print('============================')
             print('STARTING TEST FLIGHT')
-            base_throttle = [0,0,0,0]
-            self.thrust.set_throttle(base_throttle)
+            base_throttle = [36,36,36,36]
+            
             t0 = time.time()
             i = 0
-            while time.time() < t0 + 4.0:
-                self.thrust.set_throttle(np.add(base_throttle, self.angular_pid_ahrs.update()))
+            while time.time() < t0 + 2.5:
+                v_throttle = np.add(base_throttle, self.angular_pid_ahrs.update())
+                self.thrust.set_throttle(v_throttle)
                 
         finally:
             self.shutdown()
         
-q = QuadQav250(thrust_limit=50)
+q = QuadQav250(thrust_limit=100)
 q.fly()
 q.kill()
+
 
 
 

@@ -6,6 +6,6 @@ tof.open() # Initialise the i2c bus and configure the sensor
 tof.start_ranging(1) # Start ranging, 1 = Short Range, 2 = Medium Range, 3 = Long Range
 
 while True:
-        distance_in_mm = tof.get_distance() # Grab the range in mm
-        print('Distance (mm): {0}'.format(distance_in_mm))
-        time.sleep(1)
+  distance_in_mm = tof.get_distance() # Grab the range in mm
+  print('Distance (mm): {0}'.format(distance_in_mm))
+  time.sleep(1)

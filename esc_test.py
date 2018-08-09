@@ -4,7 +4,7 @@ import Adafruit_PCA9685
 pwm = Adafruit_PCA9685.PCA9685()
 
 esc_min = 150  # throttle 0
-esc_max = 320  # throttle 30%
+esc_max = 380  # throttle 30%
 
 pwm.set_pwm_freq(60)
 
