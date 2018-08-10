@@ -35,13 +35,18 @@ GYRO = 2
 
 ACCEL_LIMIT = 0.08 # g's
 
-PID_XYZ_EULER = [[0.3,0,0.1],[0.3,0,0.1],[0,0,0]]
+PID_XYZ_ROLL = [[0.005,0,0.0005],[0.005,0,0.0005],[0,0,0]]
+PID_XYZ_EULER = [[0,0,0],[0.3,0,0.1],[0,0,0]]
 PID_XYZ_OFF = [[0,0,0],[0,0,0],[0,0,0]]
 
 class Thrust:
-    def __init__(self, thrust_limit):
-        self.thrust_limit = max(min(thrust_limit, 100.0), 0.0)
-        self.esc_range = (ESC_PWM_MAX - ESC_PWM_MIN) * (thrust_limit / 100.0) / 100.0
+    def __init__(self, thrust_limit=1.0):
+        if thrust_limit > 1.0 or thrust_limit < 0.0:
+            print("WARNING: Thrust limit is out of bounds; disabling thrust", thrust_limit)
+            self.thrust_limit = 0.0
+        else:
+            self.thrust_limit = max(min(thrust_limit, 1.0), 0.0)
+        self.esc_range = ESC_PWM_MAX - ESC_PWM_MIN
         self.pwm = Adafruit_PCA9685.PCA9685()  # 16-channel PWM controller
         self.pwm.set_pwm_freq(PWM_FREQ_HZ)
         self.armed = True
@@ -73,7 +78,7 @@ class Thrust:
         self.armed = False
         
     def __str__(self):
-        return str(self.throttle) + str(self.v_pwm) + ', armed = ' + str(self.armed)
+        return 'FR,RR,RL,FL' + str(self.v_pwm) + ', armed = ' + str(self.armed)
 
 class TOF_VL53L1X:  # see https://github.com/pimoroni/vl53l1x-python
     
@@ -222,7 +227,7 @@ class IMU_FXOS8700:
 
 class PidController:
     
-    t_angular = [[0,-1,0,1],[-1,0,1,0],[-1,1,-1,1]]    # translation matrix to apply angular values to motors
+    t_angular = [[0,-1,0,1],[1,0,-1,0],[-1,1,-1,1]]    # translation matrix to apply angular values to motors
     t_linear =  [[1,0,-1,0],[0,1,0,-1],[-1,-1,-1,-1]]  # translation matrix to apply linear values to motors
     
     def __init__(self, k_3_3, f_state, target=[0.0,0.0,0.0], t=t_angular):
@@ -240,6 +245,7 @@ class PidController:
     def update(self):
         self.count += 1
         vals, dt = self.f_state()
+        
         self.throttle_adj = [0.0,0.0,0.0,0.0]
         for n in range(3):
             error = vals[n] - self.target[n]
@@ -281,15 +287,15 @@ class BoundedPid(PidController):
         
         
 class QuadQav250:
-    def __init__(self, thrust_limit = 40.0):
+    def __init__(self, thrust_limit = 1.0):
         self.thrust = Thrust(thrust_limit)
         self.thrust.set_throttle([0,0,0,0])
         self.altimeter = TOF_VL53L1X()
         #self.altimeter.calibrate()
         #self.altimeter.start()
         self.imu = AHRS_BNO055()
-        #self.angular_pid_ahrs = PidController(PID_XYZ_EULER,self.imu.get_orientation)
-        self.angular_pid_ahrs = PidController(PID_XYZ_EULER,self.imu.get_orientation)
+        self.angular_pid_ahrs = PidController(PID_XYZ_ROLL,self.imu.get_orientation)
+        #self.angular_pid_ahrs = PidController(PID_XYZ_OFF,self.imu.get_orientation)
         
     def shutdown(self):
         self.thrust.disarm()
@@ -298,8 +304,8 @@ class QuadQav250:
     
     def test(self):
         for n in range(100):
-            self.angular_pid_ahrs.update()
-            print(self.angular_pid_ahrs)
+            print('return',self.angular_pid_ahrs.update())
+            print(self.angular_pid_ahrs.throttle_adj)
     
     def kill(self):
         self.shutdown()
@@ -308,18 +314,21 @@ class QuadQav250:
         try:
             print('============================')
             print('STARTING TEST FLIGHT')
-            base_throttle = [36,36,36,36]
+            base_throttle = [.40,.40,.40,.40]
             
             t0 = time.time()
             i = 0
-            while time.time() < t0 + 2.5:
-                v_throttle = np.add(base_throttle, self.angular_pid_ahrs.update())
+            while time.time() < t0 + 6.0:
+                pid_update = self.angular_pid_ahrs.update()
+                v_throttle = np.add(base_throttle, pid_update)
                 self.thrust.set_throttle(v_throttle)
+                # print(self.thrust)
                 
         finally:
             self.shutdown()
         
-q = QuadQav250(thrust_limit=100)
+q = QuadQav250()
+#q.test()
 q.fly()
 q.kill()
 
