@@ -15,11 +15,14 @@ FORE = 0
 STARBOARD = 1
 AFT = 2
 PORT = 3
-    
-ESC_PWM_MAX = 600
-ESC_PWM_MIN = 150
 
-PWM_FREQ_HZ = 60
+PWM_FREQ_HZ = 120                                    # cycles per second, do not exceed 360!
+
+ESC_PWM_MIN = int((0.001 / (1/PWM_FREQ_HZ)) * 4096)  # esc off = pulse width of 1,000us = 0.001s
+                                                     # 0.001/(1/freq) = pulse width as % of time frame 
+                                                     # 4096 ticks per frame; provide value in ticks
+                                                     
+ESC_PWM_MAX = ESC_PWM_MIN * 2                        # max throttle = 2000us (min x 2, in ticks)
 
 VL53L1X_RANGE_SHORT = 1
 VL53L1X_RANGE_MEDIUM = 2
@@ -35,8 +38,7 @@ GYRO = 2
 
 ACCEL_LIMIT = 0.08 # g's
 
-PID_XYZ_ROLL = [[0.005,0,0.0005],[0.005,0,0.0005],[0,0,0]]
-PID_XYZ_EULER = [[0,0,0],[0.3,0,0.1],[0,0,0]]
+PID_XYZ_ROLL = [[0.010,0.0000,0.000],[0.010,0.0000,0.000],[0,0,0]]
 PID_XYZ_OFF = [[0,0,0],[0,0,0],[0,0,0]]
 
 class Thrust:
@@ -63,7 +65,6 @@ class Thrust:
         self.v_pwm[REAR_RIGHT] =  (self.throttle[AFT]  + self.throttle[STARBOARD])/2
         self.v_pwm[REAR_LEFT] =   (self.throttle[AFT]  + self.throttle[PORT])/2
         self.v_pwm[FRONT_LEFT] =  (self.throttle[FORE] + self.throttle[PORT])/2
-        
         self.v_pwm = np.multiply(self.v_pwm, self.esc_range)
         self.v_pwm = np.rint(self.v_pwm)
         self.v_pwm = np.add(self.v_pwm, ESC_PWM_MIN)
@@ -126,6 +127,8 @@ class AHRS_BNO055:
     def __init__(self):
         self.imu = BNO055.BNO055(serial_port='/dev/serial0', rst=18) # connected to UART, not I2C bus
         self.time = None
+        if not self.imu.begin():
+            raise Exception("IMU failed to initialize")
 
     # returns roll, pitch, yaw
     def get_orientation(self):
@@ -134,6 +137,9 @@ class AHRS_BNO055:
         dt = 0 if self.time == None else t1 - self.time
         self.time = t1
         return (r,p,y),dt
+        
+    def __str__(self):
+        return '(roll,pitch,yaw), dt: ' + str(self.get_orientation())
     
 class IMU_FXOS8700:
     
@@ -241,6 +247,7 @@ class PidController:
         self.t = t                  # translation matrix to apply pid to motor speeds
         self.count = 0
         self.throttle_adj = [None,None,None,None]
+        self.log = []
         
     def update(self):
         self.count += 1
@@ -267,7 +274,14 @@ class PidController:
         self.limit = limit
         
     def __str__(self):
-        return str(self.count) + '----------------\n' + str(self.p) + '\n' + str(self.i) + '\n' + str(self.d) + '\n' + str(self.pid) + '\n' + str(self.throttle_adj)
+        out = str(self.count)
+        out += ' p,i,d(x,y,z) = '
+        out += str(self.p)
+        out += str(self.i)
+        out += str(self.d)
+        out += ' pid(x,y,z) = '
+        out += str(self.pid)
+        return out
     
     
 class BoundedPid(PidController):
@@ -285,17 +299,20 @@ class BoundedPid(PidController):
            
         return self.throttle_adj
         
-        
 class QuadQav250:
-    def __init__(self, thrust_limit = 1.0):
-        self.thrust = Thrust(thrust_limit)
-        self.thrust.set_throttle([0,0,0,0])
-        self.altimeter = TOF_VL53L1X()
-        #self.altimeter.calibrate()
-        #self.altimeter.start()
-        self.imu = AHRS_BNO055()
-        self.angular_pid_ahrs = PidController(PID_XYZ_ROLL,self.imu.get_orientation)
-        #self.angular_pid_ahrs = PidController(PID_XYZ_OFF,self.imu.get_orientation)
+    def __init__(self):
+        try:
+            self.thrust = Thrust()
+            self.thrust.set_throttle([0,0,0,0])
+            self.altimeter = TOF_VL53L1X()
+            #self.altimeter.calibrate()
+            #self.altimeter.start()
+            self.imu = AHRS_BNO055()
+            self.angular_pid_ahrs = PidController(PID_XYZ_ROLL,self.imu.get_orientation)
+            #self.angular_pid_ahrs = PidController(PID_XYZ_OFF,self.imu.get_orientation)
+        except Exception:
+            self.shutdown()
+            print("Failed to initialize")
         
     def shutdown(self):
         self.thrust.disarm()
@@ -305,7 +322,7 @@ class QuadQav250:
     def test(self):
         for n in range(100):
             print('return',self.angular_pid_ahrs.update())
-            print(self.angular_pid_ahrs.throttle_adj)
+            print(self.thrust)
     
     def kill(self):
         self.shutdown()
@@ -314,7 +331,7 @@ class QuadQav250:
         try:
             print('============================')
             print('STARTING TEST FLIGHT')
-            base_throttle = [.40,.40,.40,.40]
+            base_throttle = [.32,.32,.32,.32]
             
             t0 = time.time()
             i = 0
@@ -322,7 +339,7 @@ class QuadQav250:
                 pid_update = self.angular_pid_ahrs.update()
                 v_throttle = np.add(base_throttle, pid_update)
                 self.thrust.set_throttle(v_throttle)
-                # print(self.thrust)
+                print(self.thrust)
                 
         finally:
             self.shutdown()
@@ -331,6 +348,7 @@ q = QuadQav250()
 #q.test()
 q.fly()
 q.kill()
+print(q.angular_pid_ahrs.log)
 
 
 
