@@ -32,14 +32,22 @@ from Adafruit_BNO055 import BNO055
 # below 'bno = ...' lines is uncommented:
 # Raspberry Pi configuration with serial UART and RST connected to GPIO 18:
 bno = BNO055.BNO055(serial_port='/dev/serial0', rst=18)
-# BeagleBone Black configuration with default I2C connection (SCL=P9_19, SDA=P9_20),
-# and RST connected to pin P9_12:
-#bno = BNO055.BNO055(rst='P9_12')
 
+'''
+FROM ADAFRUIT
 
-# Enable verbose debug logging if -v is passed as a parameter.
-if len(sys.argv) == 2 and sys.argv[1].lower() == '-v':
-    logging.basicConfig(level=logging.DEBUG)
+Why doesn't Euler output seem to match the Quaternion output?
+
+The Euler angles coming out of the chip are based on 'automatic orientation 
+detection', which has the drawback of not being continuous for all angles and 
+situations. According to Bosch BNO055 Euler angle output should only be used 
+for eCompass, where pitch and roll stay below 45 degrees.
+
+For absolute orientation, quaternions should always be used, and they can be 
+converted to Euler angles at the last moment via the .toEuler() helper function 
+in quaternion.h.
+'''
+
 
 # Initialize the BNO055 and stop if something went wrong.
 if not bno.begin():

@@ -16,7 +16,7 @@ STARBOARD = 1
 AFT = 2
 PORT = 3
 
-PWM_FREQ_HZ = 120                                    # cycles per second, do not exceed 360!
+PWM_FREQ_HZ = 240                                    # cycles per second, do not exceed 360!
 
 ESC_PWM_MIN = int((0.001 / (1/PWM_FREQ_HZ)) * 4096)  # esc off = pulse width of 1,000us = 0.001s
                                                      # 0.001/(1/freq) = pulse width as % of time frame 
@@ -38,7 +38,8 @@ GYRO = 2
 
 ACCEL_LIMIT = 0.08 # g's
 
-PID_XYZ_ROLL = [[0.010,0.0000,0.000],[0.010,0.0000,0.000],[0,0,0]]
+PID_XYZ_ROLL = [[0.030,0.0000,0.000],[0.030,0.0000,0.000],[0,0,0]]
+PID_GYRO_ONLY = [[0.0080,0.0000,0.000],[0.0080,0.0000,0.000],[0,0,0]]
 PID_XYZ_OFF = [[0,0,0],[0,0,0],[0,0,0]]
 
 class Thrust:
@@ -140,6 +141,60 @@ class AHRS_BNO055:
         
     def __str__(self):
         return '(roll,pitch,yaw), dt: ' + str(self.get_orientation())
+  
+class GYRO_FXAS21002:
+    def __init__(self):
+        self.gyro = IMU(dps=250, gyro_bw=800, verbose=False).gyro
+        self.calibrated = False
+        self.g_cal = [0.0,0.0,0.0]
+        self.xyz = [0.0,0.0,0.0]
+        self.xyz_dot = [None,None,None]
+        self.calibrate()
+        self.t0 = None
+     
+    def get_angular_velocity(self):
+        x_dot, y_dot, z_dot = self.gyro.get()
+        t1 = time.time()
+        self.xyz_dot = np.subtract((x_dot,y_dot,z_dot), self.g_cal)
+        
+        if self.t0 == None:
+            self.t0 = time.time()
+            return [0.0,0.0,0.0], 0.0
+        else:
+            dt = t1 - self.t0
+            self.t0 = t1
+            return self.xyz_dot, dt 
+        
+    def get(self):
+        x_dot, y_dot, z_dot = self.gyro.get()
+        t1 = time.time()
+        self.xyz_dot = np.subtract((x_dot,y_dot,z_dot), self.g_cal)
+        
+        if self.t0 == None:
+            self.t0 = time.time()
+            return [0.0,0.0,0.0], 0.0
+        else:
+            self.xyz = np.add(self.xyz, self.xyz_dot)
+            dt = t1 - self.t0
+            self.t0 = t1
+            return self.xyz, dt
+        
+    def calibrate(self):
+        print('Calibrating GYRO_FXAS21002...')
+
+        for i in range(10):
+            self.gyro.get()
+
+        for i in range(400):
+            x, y, z = self.gyro.get()
+            v = (x,y,z)
+            self.g_cal = np.add(v, self.g_cal)
+
+        self.g_cal = np.divide(self.g_cal, 400)
+        print('Gyro calibration:', self.g_cal)
+        
+    def __str__(self):
+        return 'gyro' + str(self.xyz)
     
 class IMU_FXOS8700:
     
@@ -304,15 +359,17 @@ class QuadQav250:
         try:
             self.thrust = Thrust()
             self.thrust.set_throttle([0,0,0,0])
-            self.altimeter = TOF_VL53L1X()
+            #self.altimeter = TOF_VL53L1X()
             #self.altimeter.calibrate()
             #self.altimeter.start()
-            self.imu = AHRS_BNO055()
-            self.angular_pid_ahrs = PidController(PID_XYZ_ROLL,self.imu.get_orientation)
+            #self.imu = AHRS_BNO055()
+            #self.angular_pid_ahrs = PidController(PID_XYZ_ROLL,self.imu.get_orientation)
             #self.angular_pid_ahrs = PidController(PID_XYZ_OFF,self.imu.get_orientation)
+            self.gyro = GYRO_FXAS21002()
+            self.angular_pid_gyro = PidController(PID_GYRO_ONLY,self.gyro.get_angular_velocity)
         except Exception:
             self.shutdown()
-            print("Failed to initialize")
+            print('Failed to initialize')
         
     def shutdown(self):
         self.thrust.disarm()
@@ -321,8 +378,7 @@ class QuadQav250:
     
     def test(self):
         for n in range(100):
-            print('return',self.angular_pid_ahrs.update())
-            print(self.thrust)
+            print(self.gyro.get_angular_velocity())
     
     def kill(self):
         self.shutdown()
@@ -336,7 +392,7 @@ class QuadQav250:
             t0 = time.time()
             i = 0
             while time.time() < t0 + 6.0:
-                pid_update = self.angular_pid_ahrs.update()
+                pid_update = self.angular_pid_gyro.update()
                 v_throttle = np.add(base_throttle, pid_update)
                 self.thrust.set_throttle(v_throttle)
                 print(self.thrust)
