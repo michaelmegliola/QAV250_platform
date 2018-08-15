@@ -23,7 +23,7 @@ bandwidths = [25, 50, 100, 200, 400, 800]
 
 def gyro_test():
 
-	imu = IMU(dps=250, gyro_bw=bandwidths[5], verbose=False)
+	imu = IMU(dps=250, gyro_bw=800, verbose=False)
 	gyro = imu.gyro
 	
 	for _ in range(10):
