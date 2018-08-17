@@ -44,6 +44,7 @@ class Thrust:
         self.pwm.set_pwm_freq(PWM_FREQ_HZ)
         self.armed = self.arm()
         self.v_pwm = ([ESC_PWM_MIN,ESC_PWM_MIN,ESC_PWM_MIN,ESC_PWM_MIN])
+        self.pwm.set_pwm
         self.i = 0
         self.start_time = None
         self.stop_time = None
@@ -69,7 +70,7 @@ class Thrust:
         self.pwm.set_pwm(REAR_RIGHT,  0, int(self.v_pwm[REAR_RIGHT]))
         self.pwm.set_pwm(REAR_LEFT,   0, int(self.v_pwm[REAR_LEFT]))
         self.pwm.set_pwm(FRONT_LEFT,  0, int(self.v_pwm[FRONT_LEFT]))
-
+        print(self)
         self.i += 1
         self.stop_time = time.time()
     
@@ -194,7 +195,7 @@ class QuadQav250:
         
     def shutdown(self):
         try:
-            self.thrust.disarm()
+            self.thrust.disarm
         finally:
             print('===DISARMED===')
         try:
@@ -222,11 +223,9 @@ class QuadQav250:
             while time.time() < t0 + 6.0:
                 pid_update = self.angular_pid_ahrs.update()
                 v_throttle = np.add(base_throttle, pid_update)
-                self.thrust.set_throttle(v_throttle)
+                self.thrust.set_throttle(base_throttle)
                 #print(self.thrust)
                 #self.thrust.set_throttle(base_throttle)
-            
-            self.thrust.set_throttle(0,0,0,0)
             
             print(self.ahrs.i, self.ahrs.stop_time - self.ahrs.start_time, (self.ahrs.stop_time - self.ahrs.start_time)/self.ahrs.i)
             print(self.angular_pid_ahrs.count, self.angular_pid_ahrs.stop_time - self.angular_pid_ahrs.start_time, (self.angular_pid_ahrs.stop_time - self.angular_pid_ahrs.start_time)/self.angular_pid_ahrs.count)  

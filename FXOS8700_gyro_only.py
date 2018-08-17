@@ -21,6 +21,10 @@ pi@r2d2 nxp $ sudo i2cdetect -y 1
 
 bandwidths = [25, 50, 100, 200, 400, 800]
 
+def accel_test():
+	imu = IMU(dps=250, gyro_bw=800, verbose=False)
+	
+
 def gyro_test():
 
 	imu = IMU(dps=250, gyro_bw=800, verbose=False)

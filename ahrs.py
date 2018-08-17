@@ -10,16 +10,6 @@ VL53L1X_RANGE_SHORT = 1
 VL53L1X_RANGE_MEDIUM = 2
 VL53L1X_RANGE_LONG = 3
 
-X = 0
-Y = 1
-Z = 2
-
-ACCEL = 0
-MAG = 1
-GYRO = 2
-
-ACCEL_LIMIT = 0.08 # g's
-
 class TOF_VL53L1X:  # see https://github.com/pimoroni/vl53l1x-python
     
     def __init__(self):
@@ -95,8 +85,12 @@ class AHRS_BNO055:
         
     def __str__(self):
         return 'AHRS_BNO055 i=' + str(self.i) + ' (roll,pitch,yaw), dt: ' + str(self.xyz) + ', ' + str(self.dt)
-  
+
+
 class GYRO_FXAS21002:
+    '''
+    NOTE: sensor is mounted upside-down
+    '''
     def __init__(self):
         self.gyro = IMU(dps=250, gyro_bw=800, verbose=False).gyro
         self.calibrated = False
@@ -154,12 +148,17 @@ class AHRS():
         self.xyz_dot = [0.0,0.0,0.0]
         self.t0 = None
         self.dt = None
+        self.start_time = None
+        self.stop_time = None
+        self.running = False
         self.stopping = False
         
     def start(self):
         self.gyro.start()
         self.ahrs.start()
         threading.Thread(target=self.run).start() 
+        while not self.running:
+            time.sleep(0.1) # we need a timeout here
     
     def stop(self):
         self.stopping = True
@@ -168,9 +167,12 @@ class AHRS():
         
     def run(self):
         self.xyz, self.t0 = self.ahrs.get()
+        self.xyz_dot = [0,0,0]
         loop_time = self.t0
+        self.start_time = time.time()
+        self.running = True
         while not self.stopping:
-            if time.time() > loop_time + 0.01:
+            if time.time() > loop_time + 0.10: # reset to absolute readings @ 10Hz
                 xyz, t1 = self.ahrs.get()
                 self.dt = t1 - self.t0
                 self.xyz_dot[0] = (xyz[0] - self.xyz[0]) / self.dt
@@ -187,16 +189,13 @@ class AHRS():
                 
             self.t0 = t1
             self.i += 1
+            self.stop_time = time.time()
             
+        self.running = False   
         print('Stopping AHRS')
+    
+    def get(self):
+        return self.xyz, self.xyz_dot, self.dt
     
     def __str__(self):   
         return 'AHRS i=' + str(self.i) + ',' + str(self.ahrs.i) + ',' + str(self.gyro.i) + ' ' + str(self.xyz) + str(self.xyz_dot) + str(self.dt)
-            
-a = AHRS()
-a.start()
-i = 0
-while a.ahrs.i < 3:
-    print(a)
-    i = a.ahrs.i
-a.stop()

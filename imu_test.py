@@ -27,7 +27,7 @@ def imu():
 	print('-'*header)
 	print("| {:17} | {:20} | {:20} |".format("Accels [g's]", " Magnet [uT]", "Gyros [dps]"))
 	print('-'*header)
-	for _ in range(10):
+	for _ in range(0):
 		a, m, g = imu.get()
 		print('| {:>5.2f} {:>5.2f} {:>5.2f} | {:>6.1f} {:>6.1f} {:>6.1f} | {:>6.1f} {:>6.1f} {:>6.1f} |'.format(
 			a[0], a[1], a[2],
