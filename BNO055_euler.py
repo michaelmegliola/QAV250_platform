@@ -62,16 +62,8 @@ print('Gyroscope ID:       0x{0:02X}\n'.format(gyro))
 print('Reading BNO055 data, press Ctrl-C to quit...')
 
 
-for n in range(10):
+while True:
     z,x,y = bno.read_euler()
-    print('test',n,(x,y,z))
+    print('xyz','{:>8,f}'.format(x),'{:>8,f}'.format(y),'{:>8,f}'.format(z))
+    time.sleep(.1)
 
-t = time.time()
-for n in range(1000):
-    pass
-print('no op time per loop (ms) = ', (time.time()-t))
-
-t = time.time()
-for n in range(1000):
-    z,x,y = bno.read_euler()
-print('gyro read time per loop (ms) = ', (time.time()-t))

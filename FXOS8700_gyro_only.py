@@ -30,14 +30,10 @@ def gyro_test():
 	imu = IMU(dps=250, gyro_bw=800, verbose=False)
 	gyro = imu.gyro
 	
-	for _ in range(10):
+	while True:
 		print(gyro.get())
+		time.sleep(0.1)
 		
-	t = time.time()
-	for _ in range(1000):
-		gyro.get()
-	print(time.time()-t)
-
 if __name__ == "__main__":
 	try:
 		gyro_test()
